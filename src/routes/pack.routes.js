@@ -13,17 +13,20 @@ import {
 
 const router = express.Router()
 
+/* ---------- PUBLIC ---------- */
 
 router.get("/packs", getPacks)
 
 router.get("/packs/:id", getPackById)
+
+/* ---------- ADMIN ---------- */
 
 router.post(
   "/packs",
   requireAdmin,
   upload.fields([
     { name: "coverImage", maxCount: 1 },
-    { name: "images", maxCount: 200 }
+    { name: "zipFile", maxCount: 1 }
   ]),
   createPack
 )
@@ -33,7 +36,7 @@ router.put(
   requireAdmin,
   upload.fields([
     { name: "coverImage", maxCount: 1 },
-    { name: "images", maxCount: 200 }
+    { name: "zipFile", maxCount: 1 }
   ]),
   updatePack
 )

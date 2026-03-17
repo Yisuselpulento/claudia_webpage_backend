@@ -1,25 +1,15 @@
 import Pack from "../models/pack.model.js"
-import Image from "../models/image.model.js"
-
 import { uploadToCloudinary, deleteFromCloudinary } from "../utils/uploadToCloudinary.js"
 
 export const createPack = async (req,res)=>{
 
-  const uploadedImages = []
   let uploadedCover = null
+  let uploadedZip = null
 
   try{
 
-    const {
-    title,
-    slug,
-    description,
-    price,
-    offer
-  } = req.body
-
+    const { title, slug, description, price, offer } = req.body
     const tags = req.body.tags ? JSON.parse(req.body.tags) : []
-
 
     if(!title || !slug || !price){
       return res.status(400).json({
@@ -28,16 +18,14 @@ export const createPack = async (req,res)=>{
       })
     }
 
-
     const existingPack = await Pack.findOne({slug})
 
     if(existingPack){
       return res.status(400).json({
         success:false,
-        message:"El slug del pack ya existe"
+        message:"El slug ya existe"
       })
     }
-
 
     if(!req.files?.coverImage){
       return res.status(400).json({
@@ -46,16 +34,12 @@ export const createPack = async (req,res)=>{
       })
     }
 
-
-    if(!req.files?.images || req.files.images.length === 0){
+    if(!req.files?.zipFile){
       return res.status(400).json({
         success:false,
-        message:"Debes subir al menos una imagen"
+        message:"Debes subir el archivo ZIP"
       })
     }
-
-
-    /* ---------- SUBIR PORTADA ---------- */
 
     const coverFile = req.files.coverImage[0]
 
@@ -64,41 +48,12 @@ export const createPack = async (req,res)=>{
       "packs/covers"
     )
 
+    const zipFile = req.files.zipFile[0]
 
-    /* ---------- SUBIR IMÁGENES ---------- */
-
-    const imagesIds = []
-
-    for(const file of req.files.images){
-
-      const uploadResult = await uploadToCloudinary(
-        file,
-        "packs/images"
-      )
-
-      uploadedImages.push(uploadResult)
-
-      const imageDoc = await Image.create({
-
-        title:title,
-
-        slug:`${slug}-${Date.now()}`,
-
-        image:{
-          url:uploadResult.url,
-          publicId:uploadResult.publicId
-        },
-
-        tags
-
-      })
-
-      imagesIds.push(imageDoc._id)
-
-    }
-
-
-    /* ---------- CREAR PACK ---------- */
+    uploadedZip = await uploadToCloudinary(
+      zipFile,
+      "packs/zips"
+    )
 
     const pack = await Pack.create({
 
@@ -110,16 +65,17 @@ export const createPack = async (req,res)=>{
       tags,
 
       coverImage:{
-        url:uploadedCover.url,
-        publicId:uploadedCover.publicId
+        url: uploadedCover.url,
+        publicId: uploadedCover.publicId
       },
 
-      images:imagesIds,
-
-      totalImages:imagesIds.length
+      zipFile:{
+        url: uploadedZip.url,
+        publicId: uploadedZip.publicId,
+        resourceType: uploadedZip.resourceType
+      }
 
     })
-
 
     return res.status(201).json({
       success:true,
@@ -130,11 +86,11 @@ export const createPack = async (req,res)=>{
   }catch(error){
 
     if(uploadedCover){
-      await deleteFromCloudinary(uploadedCover.publicId)
+      await deleteFromCloudinary(uploadedCover.publicId,"image")
     }
 
-    for(const img of uploadedImages){
-      await deleteFromCloudinary(img.publicId)
+    if(uploadedZip){
+      await deleteFromCloudinary(uploadedZip.publicId,"raw")
     }
 
     console.error("createPack:",error)
@@ -143,9 +99,11 @@ export const createPack = async (req,res)=>{
       success:false,
       message:"Error interno del servidor"
     })
+
   }
 
 }
+
 
 export const deletePack = async (req,res)=>{
 
@@ -162,31 +120,25 @@ export const deletePack = async (req,res)=>{
       })
     }
 
-
-    /* ---------- ELIMINAR PORTADA ---------- */
+    /* eliminar portada */
 
     if(pack.coverImage?.publicId){
-      await deleteFromCloudinary(pack.coverImage.publicId)
+      await deleteFromCloudinary(
+        pack.coverImage.publicId,
+        "image"
+      )
     }
 
+    /* eliminar zip */
 
-    /* ---------- ELIMINAR IMÁGENES ---------- */
-
-    const images = await Image.find({
-      _id:{ $in: pack.images }
-    })
-
-    for(const img of images){
-
-      await deleteFromCloudinary(img.image.publicId)
-
-      await Image.findByIdAndDelete(img._id)
-
+    if(pack.zipFile?.publicId){
+      await deleteFromCloudinary(
+        pack.zipFile.publicId,
+        pack.zipFile.resourceType
+      )
     }
-
 
     await Pack.findByIdAndDelete(id)
-
 
     return res.json({
       success:true,
@@ -206,100 +158,139 @@ export const deletePack = async (req,res)=>{
 
 }
 
-export const updatePack = async (req, res) => {
-  const uploadedImages = []
+export const updatePack = async (req,res)=>{
+
   let newCover = null
+  let newZip = null
 
-  try {
+  try{
+
     const { id } = req.params
-    let {
-      title,
-      slug,
-      description,
-      price,
-      offer,
-      tags: tagsString,
-      removeImages
-    } = req.body
+    let { title, slug, description, price, offer, tags } = req.body
 
-    // Parse tags y removeImages
-    const tags = tagsString ? JSON.parse(tagsString) : []
-    removeImages = removeImages ? JSON.parse(removeImages) : []
-
-    // Parse offer si viene como string JSON
-    offer = offer ? JSON.parse(offer) : undefined
+    tags = tags ? JSON.parse(tags) : undefined
 
     const pack = await Pack.findById(id)
-    if (!pack) return res.status(404).json({ success: false, message: "Pack no encontrado" })
 
-    // ---------- VALIDAR SLUG ÚNICO ----------
-    if (slug && slug !== pack.slug) {
-      const existingPack = await Pack.findOne({ slug })
-      if (existingPack) return res.status(400).json({ success: false, message: "El slug ya existe" })
+    if(!pack){
+      return res.status(404).json({
+        success:false,
+        message:"Pack no encontrado"
+      })
     }
 
-    // ---------- CAMBIAR PORTADA ----------
-    if (req.files?.coverImage) {
-      const coverFile = req.files.coverImage[0]
-      newCover = await uploadToCloudinary(coverFile, "packs/covers")
+    /* ---------- VALIDAR SLUG ---------- */
 
-      if (pack.coverImage?.publicId) {
-        await deleteFromCloudinary(pack.coverImage.publicId)
-      }
+    if(slug && slug !== pack.slug){
 
-      pack.coverImage = { url: newCover.url, publicId: newCover.publicId }
-    }
+      const existingPack = await Pack.findOne({slug})
 
-    // ---------- ELIMINAR IMÁGENES ----------
-    if (removeImages.length > 0) {
-      const imagesToDelete = await Image.find({ _id: { $in: removeImages } })
-      for (const img of imagesToDelete) {
-        await deleteFromCloudinary(img.image.publicId)
-        await Image.findByIdAndDelete(img._id)
-      }
-      pack.images = pack.images.filter(imgId => !removeImages.includes(imgId.toString()))
-    }
-
-    // ---------- AGREGAR NUEVAS IMÁGENES ----------
-    if (req.files?.images) {
-      for (const file of req.files.images) {
-        const uploadResult = await uploadToCloudinary(file, "packs/images")
-        uploadedImages.push(uploadResult)
-
-        const imageDoc = await Image.create({
-          title: title || pack.title,
-          slug: `${pack.slug}-${Date.now()}`,
-          image: { url: uploadResult.url, publicId: uploadResult.publicId },
-          tags
+      if(existingPack){
+        return res.status(400).json({
+          success:false,
+          message:"El slug ya existe"
         })
-
-        pack.images.push(imageDoc._id)
       }
+
     }
 
-    // ---------- ACTUALIZAR CAMPOS ----------
-    if (title) pack.title = title
-    if (slug) pack.slug = slug
-    if (description) pack.description = description
-    if (price) pack.price = Number(price)
-    if (offer) pack.offer = offer
-    if (tags.length > 0) pack.tags = tags
+    /* ---------- NUEVA PORTADA ---------- */
 
-    pack.totalImages = pack.images.length
+    if(req.files?.coverImage?.length){
+
+      const coverFile = req.files.coverImage[0]
+
+      newCover = await uploadToCloudinary(
+        coverFile,
+        "packs/covers"
+      )
+
+      if(pack.coverImage?.publicId){
+        await deleteFromCloudinary(
+          pack.coverImage.publicId,
+          "image"
+        )
+      }
+
+      pack.coverImage = {
+        url: newCover.url,
+        publicId: newCover.publicId
+      }
+
+    }
+
+    /* ---------- NUEVO ZIP ---------- */
+
+    if(req.files?.zipFile?.length){
+
+      const zipFile = req.files.zipFile[0]
+
+      newZip = await uploadToCloudinary(
+        zipFile,
+        "packs/zips"
+      )
+
+      if(pack.zipFile?.publicId){
+        await deleteFromCloudinary(
+          pack.zipFile.publicId,
+          pack.zipFile.resourceType
+        )
+      }
+
+      pack.zipFile = {
+        url: newZip.url,
+        publicId: newZip.publicId,
+        resourceType: newZip.resourceType
+      }
+
+    }
+
+    /* ---------- CAMPOS ---------- */
+
+    if(title !== undefined) pack.title = title
+    if(slug !== undefined) pack.slug = slug
+    if(description !== undefined) pack.description = description
+    if(price !== undefined) pack.price = Number(price)
+
+    if(offer !== undefined){
+      pack.offer = JSON.parse(offer)
+    }
+
+    if(tags !== undefined){
+      pack.tags = tags
+    }
 
     await pack.save()
 
-    return res.json({ success: true, message: "Pack actualizado correctamente", data: pack })
+    return res.json({
+      success:true,
+      message:"Pack actualizado correctamente",
+      data:pack
+    })
 
-  } catch (error) {
-    // Eliminar imágenes subidas si ocurre error
-    if (newCover) await deleteFromCloudinary(newCover.publicId)
-    for (const img of uploadedImages) await deleteFromCloudinary(img.publicId)
+  }catch(error){
 
-    console.error("updatePack:", error)
-    return res.status(500).json({ success: false, message: "Error interno del servidor" })
+    /* limpiar archivos nuevos si falla */
+
+    if(newCover){
+      await deleteFromCloudinary(newCover.publicId,"image")
+    }
+
+    if(newZip){
+      await deleteFromCloudinary(newZip.publicId,newZip.resourceType)
+    }
+
+    console.error("updatePack:",error)
+
+    return res.status(500).json({
+      success:false,
+      message:"Error interno del servidor"
+    })
+
   }
+
 }
+
 export const getPacks = async (req,res)=>{
 
   try{
@@ -333,10 +324,6 @@ export const getPackById = async (req,res)=>{
     const { id } = req.params
 
     const pack = await Pack.findById(id)
-      .populate({
-        path:"images",
-        select:"image.url title"
-      })
 
     if(!pack){
       return res.status(404).json({

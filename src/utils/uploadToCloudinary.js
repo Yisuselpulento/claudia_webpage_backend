@@ -1,6 +1,5 @@
 import cloudinary from "../config/cloudinary.js"
 
-
 export const uploadToCloudinary = (file, folder) => {
 
   return new Promise((resolve,reject)=>{
@@ -13,9 +12,7 @@ export const uploadToCloudinary = (file, folder) => {
 
       {
         folder,
-        resource_type:"image",
-        type:"upload",
-        access_mode:"public"
+        resource_type:"auto"
       },
 
       (error,result)=>{
@@ -23,8 +20,9 @@ export const uploadToCloudinary = (file, folder) => {
         if(error) return reject(error)
 
         resolve({
-          url:result.secure_url,
-          publicId:result.public_id
+          url: result.secure_url,
+          publicId: result.public_id,
+          resourceType: result.resource_type
         })
 
       }
@@ -36,20 +34,19 @@ export const uploadToCloudinary = (file, folder) => {
   })
 
 }
-
-export const deleteFromCloudinary = async (publicId)=>{
+export const deleteFromCloudinary = async (publicId, resourceType="image")=>{
 
   if(!publicId) return
 
   try{
 
     await cloudinary.uploader.destroy(publicId,{
-      resource_type:"image"
+      resource_type: resourceType
     })
 
   }catch(error){
 
-    console.error("Error eliminando imagen de Cloudinary:",error)
+    console.error("Error eliminando archivo de Cloudinary:",error)
 
   }
 

@@ -13,9 +13,7 @@ const packSchema = new mongoose.Schema({
     unique:true
   },
 
-  description:{
-    type:String
-  },
+  description:String,
 
   price:{
     type:Number,
@@ -27,39 +25,26 @@ const packSchema = new mongoose.Schema({
       type:Boolean,
       default:false
     },
-
-    price:{
-      type:Number
-    }
+    price:Number
   },
 
   coverImage:{
-    url:{
-      type:String,
-      required:true
-    },
-    publicId:{
-      type:String,
-      required:true
-    }
+    url:String,
+    publicId:String
   },
-
-  images:[{
-    type:mongoose.Schema.Types.ObjectId,
-    ref:"Image",
-    required:true
-  }],
 
   totalImages:{
     type:Number,
     default:0
   },
 
-  tags:{
-    type:[String],
-    default:[]
-  },
+  tags:[String],
 
+  zipFile:{
+  url:String,
+  publicId:String,
+  resourceType:String
+},
   isActive:{
     type:Boolean,
     default:true
