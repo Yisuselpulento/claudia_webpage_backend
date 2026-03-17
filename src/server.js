@@ -5,6 +5,7 @@ import connectDB from "./config/db.js"
 
 import adminRoutes from "./routes/admin.routes.js"
 import packRoutes from "./routes/pack.routes.js"
+import paymentRoutes from "./routes/payment.routes.js"
 
 dotenv.config()
 
@@ -23,6 +24,7 @@ app.get("/", (req,res)=>{
 
 app.use("/api/admin", adminRoutes)
 app.use("/api", packRoutes)
+app.use("/api/payment", paymentRoutes)    
 
 
 
